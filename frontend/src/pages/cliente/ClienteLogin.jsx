@@ -1,10 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
-
-const CLIENTES_DEMO = [
-  { email: 'cliente@correo.com', password: 'Cliente2025!', nombre: 'Marco Salazar', rol: 'cliente', id: 101 },
-];
+import api from '../../services/api.js';
 
 const s = {
   page: {
@@ -76,19 +73,25 @@ export default function ClienteLogin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    const user = CLIENTES_DEMO.find((u) => u.email === email && u.password === password);
-    if (!user) {
-      setError('Credenciales incorrectas. Verifique su email y contrasena.');
-      return;
+    setLoading(true);
+    try {
+      const res = await api.post('/auth/cliente/login', { correo: email, contrasena: password });
+      const { token, rol, nombre, id } = res.data;
+      login({ token, rol, nombre, id });
+      navigate('/cliente/pedidos');
+    } catch (err) {
+      const msg = err.response?.data?.mensaje || 'Error al conectar con el servidor';
+      setError(msg);
+    } finally {
+      setLoading(false);
     }
-    login({ ...user, token: 'mock-cliente-token' });
-    navigate('/cliente/pedidos');
   };
 
   return (
@@ -111,6 +114,7 @@ export default function ClienteLogin() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="tu@correo.com"
               required
+              disabled={loading}
             />
           </div>
           <div style={s.field}>
@@ -122,10 +126,11 @@ export default function ClienteLogin() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
+              disabled={loading}
             />
           </div>
-          <button type="submit" style={s.btn}>
-            Ingresar a mi Portal
+          <button type="submit" style={s.btn} disabled={loading}>
+            {loading ? 'Verificando...' : 'Ingresar a mi Portal'}
           </button>
         </form>
         <div style={s.hint}>

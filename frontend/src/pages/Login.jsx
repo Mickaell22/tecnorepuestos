@@ -1,11 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
-
-const USUARIOS = [
-  { email: 'admin@tecnorepuestos.com', password: 'Admin2025!', nombre: 'Administrador', rol: 'administrador' },
-  { email: 'vendedor@tecnorepuestos.com', password: 'Vendedor2025!', nombre: 'Carlos Mendoza', rol: 'vendedor' },
-];
+import api from '../services/api.js';
 
 const s = {
   page: {
@@ -92,19 +88,25 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    const user = USUARIOS.find((u) => u.email === email && u.password === password);
-    if (!user) {
-      setError('Credenciales incorrectas. Verifique su email y contrasena.');
-      return;
+    setLoading(true);
+    try {
+      const res = await api.post('/auth/login', { correo: email, contrasena: password });
+      const { token, rol, nombre, id } = res.data;
+      login({ token, rol, nombre, id });
+      navigate('/dashboard');
+    } catch (err) {
+      const msg = err.response?.data?.mensaje || 'Error al conectar con el servidor';
+      setError(msg);
+    } finally {
+      setLoading(false);
     }
-    login({ ...user, token: 'mock-jwt-token' });
-    navigate('/dashboard');
   };
 
   return (
@@ -126,6 +128,7 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="usuario@tecnorepuestos.com"
               required
+              disabled={loading}
             />
           </div>
           <div style={s.field}>
@@ -137,10 +140,11 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
+              disabled={loading}
             />
           </div>
-          <button type="submit" style={s.btn}>
-            Ingresar al Sistema
+          <button type="submit" style={s.btn} disabled={loading}>
+            {loading ? 'Verificando...' : 'Ingresar al Sistema'}
           </button>
         </form>
         <div style={s.hint}>

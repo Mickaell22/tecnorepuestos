@@ -1,6 +1,7 @@
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { PEDIDOS_MOCK } from '../../data/pedidosMock.js';
+import api from '../../services/api.js';
 
 const s = {
   page: { minHeight: '100vh', background: '#f0f4f8' },
@@ -77,13 +78,6 @@ const s = {
   itemQty: { fontSize: '0.82rem', color: '#7a8fa6', marginTop: '2px' },
   itemPrice: { fontWeight: '700', color: '#1e3a5f' },
   totalesSection: { marginTop: '16px', paddingTop: '16px', borderTop: '2px solid #1e3a5f' },
-  totalRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '8px',
-    fontSize: '0.9rem',
-    color: '#7a8fa6',
-  },
   totalFinalRow: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -108,6 +102,12 @@ const s = {
     marginTop: '8px',
   },
   downloadNote: { fontSize: '0.75rem', color: '#a0b0c0', textAlign: 'center', marginTop: '8px' },
+  errorBox: { background: '#fff0f0', border: '1px solid #f5c2c2', color: '#c0392b', borderRadius: '6px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.88rem' },
+};
+
+const formatFecha = (iso) => {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('es-EC');
 };
 
 export default function DetallePedido() {
@@ -115,60 +115,48 @@ export default function DetallePedido() {
   const navigate = useNavigate();
   const { usuario, logout } = useAuth();
 
-  const pedido = PEDIDOS_MOCK.find((p) => String(p.id) === id);
+  const [venta, setVenta] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [descargando, setDescargando] = useState(false);
+
+  useEffect(() => {
+    const cargar = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await api.get(`/ventas/${id}`);
+        setVenta(res.data);
+      } catch (err) {
+        setError('No se pudo cargar el detalle del pedido.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    cargar();
+  }, [id]);
 
   const handleLogout = () => {
     logout();
     navigate('/cliente/login');
   };
 
-  const handleDescargar = () => {
-    const contenido = `
-TECNOREPUESTOS S.A.
-Comprobante de Venta
-=====================
-Numero: ${pedido.numero}
-Fecha: ${pedido.fecha}
-Cliente: ${usuario?.nombre}
-Metodo de pago: ${pedido.metodo}
-
-PRODUCTOS:
-${pedido.items.map((i) => `  - ${i.nombre} x${i.cantidad}  $${(i.precio * i.cantidad).toFixed(2)}`).join('\n')}
-
-Subtotal: $${pedido.subtotal.toFixed(2)}
-IVA 15%:  $${pedido.iva.toFixed(2)}
-TOTAL:    $${pedido.total.toFixed(2)}
-
-Estado: ${pedido.estado}
-=====================
-Gracias por su compra.
-    `.trim();
-
-    const blob = new Blob([contenido], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `comprobante_${pedido.numero}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleDescargar = async () => {
+    setDescargando(true);
+    try {
+      const res = await api.get(`/ventas/${id}/comprobante`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `comprobante_venta_${id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('No se pudo descargar el comprobante.');
+    } finally {
+      setDescargando(false);
+    }
   };
-
-  if (!pedido) {
-    return (
-      <div style={s.page}>
-        <div style={s.header}>
-          <div>
-            <div style={s.headerBrand}>TecnoRepuestos S.A.</div>
-            <div style={s.headerSub}>Portal del Cliente</div>
-          </div>
-        </div>
-        <div style={s.content}>
-          <button style={s.backBtn} onClick={() => navigate('/cliente/pedidos')}>&larr; Volver</button>
-          <div style={{ ...s.card, textAlign: 'center', color: '#c0392b' }}>Pedido no encontrado.</div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={s.page}>
@@ -188,66 +176,78 @@ Gracias por su compra.
           &larr; Mis pedidos
         </button>
 
-        <div style={s.card}>
-          <div style={s.row}>
-            <div style={s.numero}>{pedido.numero}</div>
-            <span style={s.badge}>{pedido.estado}</span>
-          </div>
-          <div style={s.metaGrid}>
-            <div>
-              <div style={s.metaLabel}>Fecha</div>
-              <div style={s.metaVal}>{pedido.fecha}</div>
-            </div>
-            <div>
-              <div style={s.metaLabel}>Metodo de pago</div>
-              <div style={s.metaVal}>{pedido.metodo}</div>
-            </div>
-            <div>
-              <div style={s.metaLabel}>Cliente</div>
-              <div style={s.metaVal}>{usuario?.nombre}</div>
-            </div>
-            <div>
-              <div style={s.metaLabel}>N. Productos</div>
-              <div style={s.metaVal}>{pedido.items.length}</div>
-            </div>
-          </div>
-        </div>
+        {error && <div style={s.errorBox}>{error}</div>}
 
-        <div style={s.card}>
-          <div style={s.sectionTitle}>Detalle de productos</div>
-          {pedido.items.map((item, idx) => (
-            <div key={idx} style={{ ...s.itemRow, borderBottom: idx < pedido.items.length - 1 ? '1px solid #eef2f7' : 'none' }}>
-              <div>
-                <div style={s.itemName}>{item.nombre}</div>
-                <div style={s.itemQty}>Cantidad: {item.cantidad} x ${item.precio.toFixed(2)}</div>
+        {loading ? (
+          <div style={{ textAlign: 'center', color: '#a0b0c0', padding: '40px' }}>Cargando detalle...</div>
+        ) : !venta ? (
+          <div style={{ ...s.card, textAlign: 'center', color: '#c0392b' }}>Pedido no encontrado.</div>
+        ) : (
+          <>
+            <div style={s.card}>
+              <div style={s.row}>
+                <div style={s.numero}>Pedido #{venta.id}</div>
+                <span style={s.badge}>{venta.estado}</span>
               </div>
-              <div style={s.itemPrice}>${(item.precio * item.cantidad).toFixed(2)}</div>
+              <div style={s.metaGrid}>
+                <div>
+                  <div style={s.metaLabel}>Fecha</div>
+                  <div style={s.metaVal}>{formatFecha(venta.createdAt)}</div>
+                </div>
+                <div>
+                  <div style={s.metaLabel}>Estado</div>
+                  <div style={s.metaVal} style={{ textTransform: 'capitalize' }}>{venta.estado}</div>
+                </div>
+                <div>
+                  <div style={s.metaLabel}>Cliente</div>
+                  <div style={s.metaVal}>{venta.Cliente?.nombre || usuario?.nombre}</div>
+                </div>
+                <div>
+                  <div style={s.metaLabel}>N. Productos</div>
+                  <div style={s.metaVal}>{(venta.DetalleVentas || []).length}</div>
+                </div>
+              </div>
             </div>
-          ))}
 
-          <div style={s.totalesSection}>
-            <div style={s.totalRow}>
-              <span>Subtotal</span>
-              <span>${pedido.subtotal.toFixed(2)}</span>
-            </div>
-            <div style={s.totalRow}>
-              <span>IVA 15%</span>
-              <span>${pedido.iva.toFixed(2)}</span>
-            </div>
-            <div style={s.totalFinalRow}>
-              <span style={s.totalFinalLabel}>Total</span>
-              <span style={s.totalFinalVal}>${pedido.total.toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
+            <div style={s.card}>
+              <div style={s.sectionTitle}>Detalle de productos</div>
+              {(venta.DetalleVentas || []).map((item, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    ...s.itemRow,
+                    borderBottom: idx < (venta.DetalleVentas.length - 1) ? '1px solid #eef2f7' : 'none',
+                  }}
+                >
+                  <div>
+                    <div style={s.itemName}>{item.Producto?.nombre || 'Producto'}</div>
+                    <div style={s.itemQty}>
+                      Cantidad: {item.cantidad} x ${parseFloat(item.precio_unitario).toFixed(2)}
+                    </div>
+                  </div>
+                  <div style={s.itemPrice}>
+                    ${(item.cantidad * parseFloat(item.precio_unitario)).toFixed(2)}
+                  </div>
+                </div>
+              ))}
 
-        <div style={s.card}>
-          <div style={s.sectionTitle}>Comprobante</div>
-          <button style={s.downloadBtn} onClick={handleDescargar}>
-            Descargar comprobante
-          </button>
-          <div style={s.downloadNote}>Se descargara un archivo de texto con los detalles de su compra.</div>
-        </div>
+              <div style={s.totalesSection}>
+                <div style={s.totalFinalRow}>
+                  <span style={s.totalFinalLabel}>Total</span>
+                  <span style={s.totalFinalVal}>${parseFloat(venta.total).toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={s.card}>
+              <div style={s.sectionTitle}>Comprobante</div>
+              <button style={s.downloadBtn} onClick={handleDescargar} disabled={descargando}>
+                {descargando ? 'Descargando...' : 'Descargar comprobante (PDF)'}
+              </button>
+              <div style={s.downloadNote}>Se descargara el comprobante en formato PDF.</div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

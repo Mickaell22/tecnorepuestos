@@ -16,7 +16,21 @@ app.use('/api/ventas',     require('./src/routes/venta.routes'));
 app.use('/api/clientes',   require('./src/routes/cliente.routes'));
 app.use('/api/reportes',   require('./src/routes/reporte.routes'));
 
+const { sequelize } = require('./src/models');
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en el puerto ${PORT}`);
-});
+
+sequelize.authenticate()
+  .then(() => {
+    console.log('BD conectada');
+    return sequelize.sync({ alter: true });
+  })
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Servidor corriendo en el puerto ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('No se pudo conectar a la BD:', err);
+    process.exit(1);
+  });

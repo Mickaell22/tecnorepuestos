@@ -1,19 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Layout from '../components/Layout.jsx';
 import Modal from '../components/Modal.jsx';
-
-const PRODUCTOS_INIT = [
-  { id: 1, sku: 'CAB-USC-2M', nombre: 'Cable USB-C 2m', categoria: 'Cables', precio: 12.50, stock: 147, stockMinimo: 30, proveedor: 'ElectroDistribuciones S.A.' },
-  { id: 2, sku: 'CAR-65W-GN', nombre: 'Cargador 65W USB-C GaN', categoria: 'Cargadores', precio: 35.00, stock: 8, stockMinimo: 20, proveedor: 'TechSupply CIA.' },
-  { id: 3, sku: 'AUD-BT-PRO', nombre: 'Audifonos Bluetooth Pro', categoria: 'Audio', precio: 89.00, stock: 0, stockMinimo: 10, proveedor: 'SoundTech S.A.' },
-  { id: 4, sku: 'CAB-HDM-4K', nombre: 'Cable HDMI 2m 4K', categoria: 'Cables', precio: 18.00, stock: 5, stockMinimo: 15, proveedor: 'ElectroDistribuciones S.A.' },
-  { id: 5, sku: 'HUB-USB-7P', nombre: 'Hub USB 3.0 7 puertos', categoria: 'Conectividad', precio: 42.00, stock: 34, stockMinimo: 10, proveedor: 'ImportaTech CIA.' },
-  { id: 6, sku: 'CAB-LIG-1M', nombre: 'Cable Lightning 1m', categoria: 'Cables', precio: 9.50, stock: 210, stockMinimo: 50, proveedor: 'ElectroDistribuciones S.A.' },
-  { id: 7, sku: 'ADA-USC-MIC', nombre: 'Adaptador USB-C a MicroUSB', categoria: 'Adaptadores', precio: 5.00, stock: 88, stockMinimo: 25, proveedor: 'TechSupply CIA.' },
-  { id: 8, sku: 'BAT-PORT-20K', nombre: 'Bateria portatil 20000mAh', categoria: 'Baterias', precio: 65.00, stock: 22, stockMinimo: 8, proveedor: 'PowerMax S.A.' },
-];
-
-const CATEGORIAS = ['Todos', 'Cables', 'Cargadores', 'Audio', 'Conectividad', 'Adaptadores', 'Baterias'];
+import api from '../services/api.js';
 
 const s = {
   toolbar: {
@@ -77,35 +65,77 @@ const s = {
     fontWeight: '600',
     cursor: 'pointer',
   }),
+  errorBox: {
+    background: '#fff0f0',
+    border: '1px solid #f5c2c2',
+    color: '#c0392b',
+    borderRadius: '6px',
+    padding: '12px 16px',
+    marginBottom: '16px',
+    fontSize: '0.88rem',
+  },
 };
 
-const EMPTY_FORM = { sku: '', nombre: '', categoria: 'Cables', precio: '', stock: '', stockMinimo: '', proveedor: '' };
+const EMPTY_FORM = { sku: '', nombre: '', categoria: 'Cables', descripcion: '', precio_unitario: '', stock_actual: '', stock_minimo: '' };
+const CATEGORIAS_FIJAS = ['Cables', 'Cargadores', 'Audio', 'Conectividad', 'Adaptadores', 'Baterias'];
 
 export default function Inventario() {
-  const [productos, setProductos] = useState(PRODUCTOS_INIT);
+  const [productos, setProductos] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState('Todos');
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [loading, setLoading] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState('');
+
+  const cargarProductos = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await api.get('/productos');
+      setProductos(res.data);
+    } catch (err) {
+      setError('No se pudo cargar el inventario. Verifique la conexion con el servidor.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    cargarProductos();
+  }, []);
+
+  // Calcular categorias dinamicas desde los datos + fijas
+  const categoriasDisponibles = ['Todos', ...new Set([...CATEGORIAS_FIJAS, ...productos.map((p) => p.categoria)])];
 
   const filtrados = productos.filter((p) => {
-    const matchBusq = p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || p.sku.toLowerCase().includes(busqueda.toLowerCase());
+    const matchBusq =
+      p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+      p.sku.toLowerCase().includes(busqueda.toLowerCase());
     const matchCat = categoriaFiltro === 'Todos' || p.categoria === categoriaFiltro;
     return matchBusq && matchCat;
   });
 
-  const handleGuardar = (e) => {
+  const handleGuardar = async (e) => {
     e.preventDefault();
-    const nuevo = {
-      id: Date.now(),
-      ...form,
-      precio: parseFloat(form.precio),
-      stock: parseInt(form.stock),
-      stockMinimo: parseInt(form.stockMinimo),
-    };
-    setProductos([...productos, nuevo]);
-    setModal(false);
-    setForm(EMPTY_FORM);
+    setGuardando(true);
+    setError('');
+    try {
+      await api.post('/productos', {
+        ...form,
+        precio_unitario: parseFloat(form.precio_unitario),
+        stock_actual: parseInt(form.stock_actual) || 0,
+        stock_minimo: parseInt(form.stock_minimo) || 5,
+      });
+      setModal(false);
+      setForm(EMPTY_FORM);
+      cargarProductos();
+    } catch (err) {
+      setError(err.response?.data?.mensaje || 'Error al guardar el producto');
+    } finally {
+      setGuardando(false);
+    }
   };
 
   const stockLabel = (stock, min) => {
@@ -116,9 +146,12 @@ export default function Inventario() {
 
   return (
     <Layout title="Inventario de Productos">
+      {error && <div style={s.errorBox}>{error}</div>}
+
       <div style={s.toolbar}>
         <div style={s.searchInput}>
           <input
+            aria-label="Buscar producto por nombre o SKU"
             placeholder="Buscar por nombre o SKU..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
@@ -131,44 +164,48 @@ export default function Inventario() {
 
       <div style={s.section}>
         <div style={s.filterRow}>
-          {CATEGORIAS.map((cat) => (
+          {categoriasDisponibles.map((cat) => (
             <button key={cat} style={s.filterBtn(categoriaFiltro === cat)} onClick={() => setCategoriaFiltro(cat)}>
               {cat}
             </button>
           ))}
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>SKU</th>
-              <th>Producto</th>
-              <th>Categoria</th>
-              <th>Precio</th>
-              <th>Stock</th>
-              <th>Estado</th>
-              <th>Proveedor</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtrados.length === 0 ? (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: '#a0b0c0', padding: '24px' }}>Sin resultados</td></tr>
-            ) : filtrados.map((p) => (
-              <tr key={p.id}>
-                <td style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: '#4a6f95' }}>{p.sku}</td>
-                <td style={{ fontWeight: '600' }}>{p.nombre}</td>
-                <td style={{ color: '#7a8fa6', fontSize: '0.87rem' }}>{p.categoria}</td>
-                <td style={{ fontWeight: '700', color: '#1e3a5f' }}>${p.precio.toFixed(2)}</td>
-                <td style={{ fontWeight: '700' }}>{p.stock}</td>
-                <td><span style={s.badge(p.stock, p.stockMinimo)}>{stockLabel(p.stock, p.stockMinimo)}</span></td>
-                <td style={{ fontSize: '0.85rem', color: '#7a8fa6' }}>{p.proveedor}</td>
+
+        {loading ? (
+          <div style={{ textAlign: 'center', color: '#a0b0c0', padding: '40px' }}>Cargando inventario...</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Producto</th>
+                <th>Categoria</th>
+                <th>Precio</th>
+                <th>Stock</th>
+                <th>Estado</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtrados.length === 0 ? (
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#a0b0c0', padding: '24px' }}>Sin resultados</td></tr>
+              ) : filtrados.map((p) => (
+                <tr key={p.id}>
+                  <td style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: '#4a6f95' }}>{p.sku}</td>
+                  <td style={{ fontWeight: '600' }}>{p.nombre}</td>
+                  <td style={{ color: '#7a8fa6', fontSize: '0.87rem' }}>{p.categoria}</td>
+                  <td style={{ fontWeight: '700', color: '#1e3a5f' }}>${parseFloat(p.precio_unitario).toFixed(2)}</td>
+                  <td style={{ fontWeight: '700' }}>{p.stock_actual}</td>
+                  <td><span style={s.badge(p.stock_actual, p.stock_minimo)}>{stockLabel(p.stock_actual, p.stock_minimo)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      <Modal isOpen={modal} onClose={() => setModal(false)} title="Nuevo Producto">
+      <Modal isOpen={modal} onClose={() => { setModal(false); setError(''); }} title="Nuevo Producto">
         <form onSubmit={handleGuardar}>
+          {error && <div style={s.errorBox}>{error}</div>}
           <div style={s.formGrid}>
             <div style={s.formField}>
               <label>SKU</label>
@@ -177,7 +214,7 @@ export default function Inventario() {
             <div style={s.formField}>
               <label>Categoria</label>
               <select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
-                {CATEGORIAS.slice(1).map((c) => <option key={c}>{c}</option>)}
+                {CATEGORIAS_FIJAS.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
           </div>
@@ -185,29 +222,29 @@ export default function Inventario() {
             <label>Nombre del producto</label>
             <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Cable USB-C 2m" required />
           </div>
+          <div style={s.formField}>
+            <label>Descripcion</label>
+            <input value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Descripcion opcional" />
+          </div>
           <div style={s.formGrid}>
             <div style={s.formField}>
               <label>Precio (USD)</label>
-              <input type="number" step="0.01" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} placeholder="0.00" required />
+              <input type="number" step="0.01" value={form.precio_unitario} onChange={(e) => setForm({ ...form, precio_unitario: e.target.value })} placeholder="0.00" required />
             </div>
             <div style={s.formField}>
               <label>Stock inicial</label>
-              <input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} placeholder="0" required />
+              <input type="number" value={form.stock_actual} onChange={(e) => setForm({ ...form, stock_actual: e.target.value })} placeholder="0" required />
             </div>
           </div>
-          <div style={s.formGrid}>
-            <div style={s.formField}>
-              <label>Stock minimo</label>
-              <input type="number" value={form.stockMinimo} onChange={(e) => setForm({ ...form, stockMinimo: e.target.value })} placeholder="10" required />
-            </div>
-            <div style={s.formField}>
-              <label>Proveedor</label>
-              <input value={form.proveedor} onChange={(e) => setForm({ ...form, proveedor: e.target.value })} placeholder="Nombre del proveedor" required />
-            </div>
+          <div style={s.formField}>
+            <label>Stock minimo</label>
+            <input type="number" value={form.stock_minimo} onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })} placeholder="5" required />
           </div>
           <div style={s.btnGroup}>
-            <button type="button" style={s.btnSecondary} onClick={() => setModal(false)}>Cancelar</button>
-            <button type="submit" style={s.btnPrimary}>Guardar Producto</button>
+            <button type="button" style={s.btnSecondary} onClick={() => { setModal(false); setError(''); }}>Cancelar</button>
+            <button type="submit" style={s.btnPrimary} disabled={guardando}>
+              {guardando ? 'Guardando...' : 'Guardar Producto'}
+            </button>
           </div>
         </form>
       </Modal>

@@ -1,24 +1,7 @@
+import { useState, useEffect } from 'react';
 import Layout from '../components/Layout.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-
-const metricas = [
-  { label: 'Total Productos', valor: '48', sub: 'en inventario', color: '#1e3a5f', icon: 'P' },
-  { label: 'Ventas del Dia', valor: '$1,240.00', sub: '7 transacciones hoy', color: '#1a7f4e', icon: 'V' },
-  { label: 'Alertas de Stock', valor: '3', sub: 'productos bajo minimo', color: '#c0392b', icon: 'A' },
-  { label: 'Proveedores', valor: '6', sub: 'registrados', color: '#7d3c98', icon: 'R' },
-];
-
-const alertasStock = [
-  { nombre: 'Cargador 65W USB-C', stock: 8, minimo: 20, categoria: 'Cargadores' },
-  { nombre: 'Audifonos Bluetooth Pro', stock: 0, minimo: 10, categoria: 'Audio' },
-  { nombre: 'Cable HDMI 2m 4K', stock: 5, minimo: 15, categoria: 'Cables' },
-];
-
-const ventasRecientes = [
-  { id: 'V-001', cliente: 'Marco Salazar', monto: '$245.00', fecha: '16/05/2026', estado: 'Completada' },
-  { id: 'V-002', cliente: 'Ana Torres', monto: '$89.50', fecha: '16/05/2026', estado: 'Completada' },
-  { id: 'V-003', cliente: 'Luis Paredes', monto: '$412.00', fecha: '15/05/2026', estado: 'Completada' },
-];
+import api from '../services/api.js';
 
 const s = {
   grid: {
@@ -112,14 +95,93 @@ const s = {
     opacity: 0.75,
     marginTop: '4px',
   },
+  errorBox: {
+    background: '#fff0f0',
+    border: '1px solid #f5c2c2',
+    color: '#c0392b',
+    borderRadius: '6px',
+    padding: '12px 16px',
+    marginBottom: '16px',
+    fontSize: '0.88rem',
+  },
 };
 
 export default function Dashboard() {
   const { usuario } = useAuth();
   const fecha = new Date().toLocaleDateString('es-EC', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
+  const [inventario, setInventario] = useState(null);
+  const [reporteVentas, setReporteVentas] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const cargar = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const hoy = new Date().toISOString().split('T')[0];
+        const [resInv, resVentas] = await Promise.all([
+          api.get('/reportes/inventario'),
+          api.get('/reportes/ventas', { params: { desde: hoy, hasta: hoy } }),
+        ]);
+        setInventario(resInv.data);
+        setReporteVentas(resVentas.data);
+      } catch (err) {
+        setError('No se pudieron cargar los datos del dashboard. Verifique la conexion con el servidor.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    cargar();
+  }, []);
+
+  const metricas = [
+    {
+      label: 'Total Productos',
+      valor: loading ? '...' : String(inventario?.resumen?.total || 0),
+      sub: 'en inventario',
+      color: '#1e3a5f',
+      icon: 'P',
+    },
+    {
+      label: 'Ventas del Dia',
+      valor: loading ? '...' : `$${(reporteVentas?.totalIngresos || 0).toFixed(2)}`,
+      sub: `${reporteVentas?.totalTransacciones || 0} transacciones hoy`,
+      color: '#1a7f4e',
+      icon: 'V',
+    },
+    {
+      label: 'Alertas de Stock',
+      valor: loading ? '...' : String((inventario?.resumen?.sinStock || 0) + (inventario?.resumen?.bajoMinimo || 0)),
+      sub: 'productos bajo minimo o sin stock',
+      color: '#c0392b',
+      icon: 'A',
+    },
+    {
+      label: 'Sin Stock',
+      valor: loading ? '...' : String(inventario?.resumen?.sinStock || 0),
+      sub: 'productos agotados',
+      color: '#7d3c98',
+      icon: 'S',
+    },
+  ];
+
+  const alertasStock = (inventario?.productos || []).filter(
+    (p) => p.estado === 'sin_stock' || p.estado === 'bajo_minimo'
+  ).slice(0, 5);
+
+  const ventasRecientes = (reporteVentas?.ventas || []).slice(0, 5);
+
+  const formatFecha = (iso) => {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString('es-EC');
+  };
+
   return (
     <Layout title="Dashboard">
+      {error && <div style={s.errorBox}>{error}</div>}
+
       <div style={s.welcome}>
         <div>
           <div style={s.welcomeText}>Bienvenido, {usuario?.nombre || 'Usuario'}</div>
@@ -143,57 +205,69 @@ export default function Dashboard() {
 
       <div style={s.row2}>
         <div style={s.section}>
-          <div style={s.sectionTitle}>Alertas de Stock Minimo</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th>Stock</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {alertasStock.map((p) => (
-                <tr key={p.nombre}>
-                  <td>
-                    <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{p.nombre}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#7a8fa6' }}>{p.categoria}</div>
-                  </td>
-                  <td style={{ fontWeight: '700' }}>{p.stock}</td>
-                  <td>
-                    <span style={s.badge(p.stock === 0 ? 'red' : 'orange')}>
-                      {p.stock === 0 ? 'Sin stock' : 'Stock bajo'}
-                    </span>
-                  </td>
+          <div style={s.sectionTitle}>Alertas de Stock</div>
+          {loading ? (
+            <div style={{ color: '#a0b0c0', fontSize: '0.88rem' }}>Cargando...</div>
+          ) : alertasStock.length === 0 ? (
+            <div style={{ color: '#1a7f4e', fontSize: '0.88rem' }}>Todos los productos tienen stock normal.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Stock</th>
+                  <th>Estado</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {alertasStock.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{p.nombre}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#7a8fa6' }}>{p.categoria}</div>
+                    </td>
+                    <td style={{ fontWeight: '700' }}>{p.stock_actual}</td>
+                    <td>
+                      <span style={s.badge(p.estado === 'sin_stock' ? 'red' : 'orange')}>
+                        {p.estado === 'sin_stock' ? 'Sin stock' : 'Stock bajo'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         <div style={s.section}>
-          <div style={s.sectionTitle}>Ventas Recientes</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Venta</th>
-                <th>Cliente</th>
-                <th>Monto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ventasRecientes.map((v) => (
-                <tr key={v.id}>
-                  <td>
-                    <div style={{ fontWeight: '700', fontSize: '0.85rem', color: '#2a5298' }}>{v.id}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#7a8fa6' }}>{v.fecha}</div>
-                  </td>
-                  <td style={{ fontSize: '0.9rem' }}>{v.cliente}</td>
-                  <td style={{ fontWeight: '700', color: '#1a7f4e' }}>{v.monto}</td>
+          <div style={s.sectionTitle}>Ventas de Hoy</div>
+          {loading ? (
+            <div style={{ color: '#a0b0c0', fontSize: '0.88rem' }}>Cargando...</div>
+          ) : ventasRecientes.length === 0 ? (
+            <div style={{ color: '#7a8fa6', fontSize: '0.88rem' }}>No hay ventas registradas hoy.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Venta</th>
+                  <th>Cliente</th>
+                  <th>Monto</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {ventasRecientes.map((v) => (
+                  <tr key={v.id}>
+                    <td>
+                      <div style={{ fontWeight: '700', fontSize: '0.85rem', color: '#2a5298' }}>#{v.id}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#7a8fa6' }}>{formatFecha(v.createdAt)}</div>
+                    </td>
+                    <td style={{ fontSize: '0.9rem' }}>{v.Cliente?.nombre || '—'}</td>
+                    <td style={{ fontWeight: '700', color: '#1a7f4e' }}>${parseFloat(v.total).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </Layout>
