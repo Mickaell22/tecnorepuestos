@@ -1,11 +1,18 @@
+require('dotenv').config();
 const request = require('supertest');
 const express = require('express');
+
+const TEST_ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL;
+const TEST_ADMIN_PASS  = process.env.TEST_ADMIN_PASS;
+
+if (!TEST_ADMIN_EMAIL || !TEST_ADMIN_PASS) {
+  throw new Error('Faltan variables de entorno TEST_ADMIN_EMAIL y TEST_ADMIN_PASS en el archivo .env');
+}
 
 // App mínima para la prueba de integración (sin BD real)
 const app = express();
 app.use(express.json());
 
-// Simulamos el endpoint de login con lógica básica
 app.post('/api/auth/login', (req, res) => {
   const { correo, contrasena } = req.body;
 
@@ -13,8 +20,7 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(400).json({ mensaje: 'Correo y contraseña son requeridos' });
   }
 
-  // Usuario de prueba hardcodeado para el test de integración
-  if (correo === 'admin@tecnorepuestos.com' && contrasena === 'Admin2025!') {
+  if (correo === TEST_ADMIN_EMAIL && contrasena === TEST_ADMIN_PASS) {
     return res.status(200).json({ token: 'token-de-prueba', rol: 'administrador' });
   }
 
@@ -27,7 +33,7 @@ describe('POST /api/auth/login', () => {
   test('responde 200 y devuelve token con credenciales correctas', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ correo: 'admin@tecnorepuestos.com', contrasena: 'Admin2025!' });
+      .send({ correo: TEST_ADMIN_EMAIL, contrasena: TEST_ADMIN_PASS });
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toHaveProperty('token');
@@ -37,7 +43,7 @@ describe('POST /api/auth/login', () => {
   test('responde 401 con credenciales incorrectas', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ correo: 'admin@tecnorepuestos.com', contrasena: 'clave-incorrecta' });
+      .send({ correo: TEST_ADMIN_EMAIL, contrasena: 'clave-incorrecta' });
 
     expect(res.statusCode).toBe(401);
     expect(res.body).toHaveProperty('mensaje');
@@ -46,7 +52,7 @@ describe('POST /api/auth/login', () => {
   test('responde 400 si faltan campos obligatorios', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ correo: 'admin@tecnorepuestos.com' });
+      .send({ correo: TEST_ADMIN_EMAIL });
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toHaveProperty('mensaje');

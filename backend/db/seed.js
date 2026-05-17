@@ -26,8 +26,17 @@ async function seed() {
   console.log('Tablas recreadas.');
 
   // ─── Usuarios ────────────────────────────────────────────────────────────
-  const hashAdmin     = await bcrypt.hash('Admin2025!',    SALT_ROUNDS);
-  const hashVendedor  = await bcrypt.hash('Vendedor2025!', SALT_ROUNDS);
+  const seedAdminPass    = process.env.SEED_ADMIN_PASS;
+  const seedVendedorPass = process.env.SEED_VENDEDOR_PASS;
+  const seedClientePass  = process.env.SEED_CLIENTE_PASS;
+
+  if (!seedAdminPass || !seedVendedorPass || !seedClientePass) {
+    console.error('Faltan variables de entorno: SEED_ADMIN_PASS, SEED_VENDEDOR_PASS, SEED_CLIENTE_PASS');
+    process.exit(1);
+  }
+
+  const hashAdmin    = await bcrypt.hash(seedAdminPass,    SALT_ROUNDS);
+  const hashVendedor = await bcrypt.hash(seedVendedorPass, SALT_ROUNDS);
 
   const admin = await Usuario.create({
     nombre: 'Juan Garcia',
@@ -46,7 +55,7 @@ async function seed() {
   console.log('Usuarios creados.');
 
   // ─── Cliente ─────────────────────────────────────────────────────────────
-  const hashCliente = await bcrypt.hash('Cliente2025!', SALT_ROUNDS);
+  const hashCliente = await bcrypt.hash(seedClientePass, SALT_ROUNDS);
 
   const cliente = await Cliente.create({
     nombre: 'Marco Salazar',
@@ -147,11 +156,7 @@ async function seed() {
   console.log('Ventas creadas.');
   console.log('');
   console.log('Seed completado correctamente.');
-  console.log('');
-  console.log('Credenciales de prueba:');
-  console.log('  Admin:    admin@tecnorepuestos.com    / Admin2025!');
-  console.log('  Vendedor: vendedor@tecnorepuestos.com / Vendedor2025!');
-  console.log('  Cliente:  cliente@correo.com          / Cliente2025!');
+  console.log('Credenciales configuradas via variables de entorno SEED_*');
 
   process.exit(0);
 }
